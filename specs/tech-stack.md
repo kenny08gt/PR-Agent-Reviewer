@@ -33,7 +33,7 @@
   - `action.yml` at repo root declares the input schema (github-token, llm-provider, openai-api-key, moonshot-api-key, llm-model, llm-base-url, max-files-to-review, max-diff-lines, review-enabled, dry-run).
   - `Dockerfile` at repo root builds a `python:3.13-slim` image that installs `src/requirements.txt` and runs `python -m src.action` on entry.
   - `src/action.py` is the container entry point. It maps `INPUT_<NAME>` env vars onto `Settings`-compatible names, reads the `GITHUB_EVENT_PATH` JSON, and invokes `PRReviewerAgent.review_pr(...)` for pull-request events with actions `opened` / `synchronize` / `reopened`.
-  - Distribution: consumers add `uses: alanhurtarte/pr-reviewer-agent@v1` to a workflow; GitHub builds and caches the image.
+  - Distribution: consumers add `uses: kenny08gt/PR-Agent-Reviewer@v1` to a workflow; GitHub builds and caches the image.
 - **Self-hosted webhook server**: removed 2026-04-21 (Wave 3). See Constraint #1.
 - **GitLab**: dropped 2026-04-21. See Constraint #4.
 
@@ -93,7 +93,7 @@ Local smoke-test escape hatch: when `GITHUB_EVENT_PATH` is unset and both `CLI_R
                                ▼
            ┌────────────────────────────────────────┐
            │  Workflow: .github/workflows/*.yml     │
-           │  uses: alanhurtarte/pr-reviewer-agent  │
+           │  uses: kenny08gt/PR-Agent-Reviewer  │
            └──────────────────┬─────────────────────┘
                               │ (docker run per event)
                               ▼

@@ -19,7 +19,7 @@ Every pull request receives a thoughtful, context-aware review within seconds. D
 - **Development Teams**: Small to medium teams (5-50 developers) who want consistent code quality without blocking reviews
 - **Tech Leads**: Leaders who want to enforce architectural standards across their organization
 
-Both primary cohorts share one need: **zero-hosting install**. This is why Wave 3 (2026-04-21) pivoted from a self-hosted webhook server to a Docker-container GitHub Action — `uses: alanhurtarte/pr-reviewer-agent@v1` in a workflow file is the entire install.
+Both primary cohorts share one need: **zero-hosting install**. This is why Wave 3 (2026-04-21) pivoted from a self-hosted webhook server to a Docker-container GitHub Action — `uses: kenny08gt/PR-Agent-Reviewer@v1` in a workflow file is the entire install.
 
 ## Core Values
 

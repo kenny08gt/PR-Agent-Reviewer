@@ -1,6 +1,6 @@
 name: 'AI PR Reviewer'
 description: 'AI-powered pull request reviewer using OpenAI or Moonshot/Kimi via LangChain'
-author: 'alanhurtarte'
+author: 'kenny08gt'
 branding:
   icon: 'git-pull-request'
   color: 'purple'

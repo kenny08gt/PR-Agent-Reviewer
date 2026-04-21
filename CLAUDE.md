@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-AI-powered PR reviewer shipped as a Docker-container GitHub Action. Consumers add `uses: alanhurtarte/pr-reviewer-agent@v1` to a workflow file; on each PR event the Action container runs, fetches the diff, asks an OpenAI model (or Moonshot/Kimi, configurable) to review it via a LangChain tool-using agent, and posts the review back. Python 3.13, LangChain 0.3, no server to host.
+AI-powered PR reviewer shipped as a Docker-container GitHub Action. Consumers add `uses: kenny08gt/PR-Agent-Reviewer@v1` to a workflow file; on each PR event the Action container runs, fetches the diff, asks an OpenAI model (or Moonshot/Kimi, configurable) to review it via a LangChain tool-using agent, and posts the review back. Python 3.13, LangChain 0.3, no server to host.
 
 ## Repository layout notes
 
@@ -55,7 +55,7 @@ GitHub pull_request event
         ▼
 ┌───────────────────────────────────────────────┐
 │  Workflow: .github/workflows/*.yml            │
-│  uses: alanhurtarte/pr-reviewer-agent         │
+│  uses: kenny08gt/PR-Agent-Reviewer         │
 └───────────────┬───────────────────────────────┘
                 │ docker run per event
                 ▼

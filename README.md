@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Run PR Reviewer
-        uses: alanhurtarte/pr-reviewer-agent@v1
+        uses: kenny08gt/PR-Agent-Reviewer@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}

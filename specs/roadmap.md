@@ -157,9 +157,9 @@ Out of scope for any future phase:
 - [ ] **v1.0.0 release**
   - [ ] Tag the repo
   - [ ] List on GitHub Marketplace
-  - [ ] Advertise `uses: alanhurtarte/pr-reviewer-agent@v1` in the README quickstart
+  - [ ] Advertise `uses: kenny08gt/PR-Agent-Reviewer@v1` in the README quickstart
 - [ ] **GHCR image caching**
-  - [ ] Build + push a versioned image per release tag to `ghcr.io/alanhurtarte/pr-reviewer-agent`
+  - [ ] Build + push a versioned image per release tag to `ghcr.io/kenny08gt/pr-agent-reviewer`
   - [ ] Reference it in `action.yml` via `image: 'docker://ghcr.io/...'` once stable (cuts cold-start from pip-install-time to docker-pull-time)
 - [ ] **Semver-compatible input schema**
   - [ ] ADR-style note in `specs/` whenever an input is added/renamed/removed
