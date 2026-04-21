@@ -9,35 +9,33 @@
 
 ### AI/LLM Layer
 - **LangChain 0.3.27**: Framework for building LLM applications with chain composition
-- **LangChain-OpenAI 0.3.28**: OpenAI integration for GPT models
-- **OpenAI 1.98.0**: Direct API access for advanced use cases
+- **LangChain-OpenAI 0.3.28**: OpenAI-compatible chat model wrapper used for both OpenAI and Moonshot/Kimi
+- **OpenAI 1.98.0**: Underlying SDK
+- **Supported LLM providers**:
+  - **OpenAI**: GPT-4o-class models via `langchain-openai`'s `ChatOpenAI` (default `gpt-4o-mini`)
+  - **Moonshot / Kimi**: Kimi K2 family (`kimi-k2-0905-preview`, `kimi-k2-turbo-preview`, `kimi-k2-thinking*`). The Kimi API is OpenAI-SDK-compatible (`base_url=https://api.moonshot.ai/v1`), so we reuse `ChatOpenAI` with a different base URL and API key — no new LangChain dependency. Provider selection is a runtime input via `llm-provider`.
 
-### API & Web Layer
-- **FastAPI 0.116.1**: Modern, fast web framework for API endpoints
-- **Uvicorn 0.35.0**: ASGI server for running the application
-- **Pydantic 2.11.7**: Data validation and settings management
-- **Pydantic-Settings 2.6.1**: Configuration management with environment variables
+### Configuration
+- **Pydantic 2.11.7**: Data validation
+- **Pydantic-Settings 2.6.1**: Environment-variable-driven configuration
+- **python-dotenv 1.2.2**: Local `.env` loading for smoke-tests; no-op inside the Action container
 
 ### Platform Integrations
-- **PyGithub 2.7.0**: GitHub API client for PR interactions
-- **python-gitlab 6.2.0**: GitLab API client for PR/MR interactions
-- **requests 2.32.4**: HTTP library for webhook handling
-- **aiohttp 3.12.15**: Async HTTP client for concurrent API calls
+- **PyGithub 2.7.0**: GitHub API client
 
-### Utilities
-- **python-multipart 0.0.20**: Form data parsing for webhooks
-- **python-dotenv**: Environment variable management
+### Test tooling
+- **pytest 8.3.3**
+- **pytest-asyncio 0.24.0**
 
 ## Infrastructure & Deployment
 
-- **GitHub Actions**: Primary execution environment for the agent
-  - Triggered on PR events (open, update, synchronize)
-  - Runs as a containerized job with access to repository code
-  - Posts review comments directly to PRs
-
-- **Webhook Support**: Optional self-hosted mode via FastAPI server
-  - Receives platform webhooks (GitHub/GitLab)
-  - Processes reviews asynchronously
+- **Docker-container GitHub Action** (only delivery model):
+  - `action.yml` at repo root declares the input schema (github-token, llm-provider, openai-api-key, moonshot-api-key, llm-model, llm-base-url, max-files-to-review, max-diff-lines, review-enabled, dry-run).
+  - `Dockerfile` at repo root builds a `python:3.13-slim` image that installs `src/requirements.txt` and runs `python -m src.action` on entry.
+  - `src/action.py` is the container entry point. It maps `INPUT_<NAME>` env vars onto `Settings`-compatible names, reads the `GITHUB_EVENT_PATH` JSON, and invokes `PRReviewerAgent.review_pr(...)` for pull-request events with actions `opened` / `synchronize` / `reopened`.
+  - Distribution: consumers add `uses: alanhurtarte/pr-reviewer-agent@v1` to a workflow; GitHub builds and caches the image.
+- **Self-hosted webhook server**: removed 2026-04-21 (Wave 3). See Constraint #1.
+- **GitLab**: dropped 2026-04-21. See Constraint #4.
 
 ## Data Storage (Future: RAG Integration)
 
@@ -47,79 +45,79 @@
 
 ## Development Tools
 
-- **venv**: Virtual environment management
+- **venv**: Virtual environment management for local test runs
 - **Git**: Version control with conventional commits
 
 ## Constraints & Decisions
 
-1. **GitHub Actions First**: The MVP runs exclusively as a GitHub Action. Self-hosted webhook mode is a future phase.
+1. **GitHub Action First** _(revised 2026-04-21; was "Webhook First")_: The MVP ships as a Docker-container GitHub Action. `src/main.py` (FastAPI webhook server) was deleted along with its `/webhook/github`, `/webhook/gitlab`, `/review/...`, `/analyze/...`, and `/health` endpoints. Target users (OSS maintainers, 5-50 dev teams) want zero-hosting install, and the Action gives us `uses: ... @v1` in a workflow as the entire install story. Auth flows via `${{ secrets.GITHUB_TOKEN }}`, so no webhook secret has to be provisioned.
 
-2. **Python Over TypeScript**: While GitHub Actions supports TypeScript natively, Python's superior ML/AI ecosystem (LangChain, OpenAI SDKs) makes it the right choice for an LLM-heavy application.
+2. **Python Over TypeScript**: Python's superior ML/AI ecosystem (LangChain, OpenAI SDKs) makes it the right choice for an LLM-heavy application.
 
 3. **LangChain for Orchestration**: Raw OpenAI calls would be simpler for basic cases, but LangChain provides essential abstractions for context management, prompt templating, and future RAG integration.
 
-4. **Dual Platform Support**: GitHub and GitLab APIs differ significantly. The architecture must abstract platform-specific logic while supporting both from day one.
+4. **GitHub Only (GitLab Dropped)** _(revised 2026-04-21)_: The original plan had parallel GitHub and GitLab tool sets. Wave 3 dropped GitLab entirely (`src/tools/gitlab_tools.py` deleted, `tests/test_guardrails.py` GitLab cases removed, `specs/roadmap.md` Phase 4 rewritten). If a concrete GitLab user emerges we'll re-introduce the platform abstraction with a shared interface — but we won't speculatively carry it.
 
-5. **Async Throughout**: All external API calls (LLM, GitHub, GitLab) use async patterns to maximize throughput and minimize review latency.
+5. **No Database, Anywhere** _(revised 2026-04-21)_: Wave 2b added a SQLite history KV for durable dedup. Wave 3 dropped it because a Docker-container Action is ephemeral — each run is a fresh container with no writable durable state, so a KV adds zero value. Dedup is now handled upstream by GitHub's own event semantics (the workflow only triggers on `opened` / `synchronize` / `reopened`). If we later add RAG in Phase 3, a vector store lives OUTSIDE the Action container.
 
-6. **No Database in MVP**: The initial version is stateless. All context comes from the PR diff and shallow git history. RAG integration in future phases adds persistent knowledge.
+6. **Async Not Required**: The Action container is single-shot (one PR per run). We kept LangChain's async-friendly abstractions but don't rely on `asyncio.gather`-style concurrency anywhere in the code path. Async is a latent capability, not a requirement.
+
+7. **Secret Redaction Mandatory**: As of Wave 3, `src/utils/redactor.py` scrubs obvious secrets (GitHub / OpenAI / Slack / AWS / JWT / PEM / generic password-assignments) from patches BEFORE they reach the LLM. Counts are logged; matches are never logged.
 
 ## Environment Configuration
 
-Required environment variables:
+Inputs are declared in `action.yml` (source of truth). For reference, the mapping from Action input to internal env var is:
 
-```bash
-# OpenAI Configuration
-OPENAI_API_KEY=your_openai_api_key_here
+| Action input           | Env var inside container   | Required | Default             |
+|------------------------|----------------------------|----------|---------------------|
+| `github-token`         | `INPUT_GITHUB_TOKEN` -> `GITHUB_TOKEN`         | yes      | — |
+| `openai-api-key`       | `INPUT_OPENAI_API_KEY` -> `OPENAI_API_KEY`     | when `llm-provider=openai` | — |
+| `moonshot-api-key`     | `INPUT_MOONSHOT_API_KEY` -> `MOONSHOT_API_KEY` | when `llm-provider=kimi`   | — |
+| `llm-provider`         | `INPUT_LLM_PROVIDER` -> `LLM_PROVIDER`         | no       | `openai`            |
+| `llm-model`            | `INPUT_LLM_MODEL` -> `LLM_MODEL`               | no       | per-provider default |
+| `llm-base-url`         | `INPUT_LLM_BASE_URL` -> `LLM_BASE_URL`         | no       | provider default    |
+| `max-files-to-review`  | `INPUT_MAX_FILES_TO_REVIEW` -> `MAX_FILES_TO_REVIEW` | no | `10` |
+| `max-diff-lines`       | `INPUT_MAX_DIFF_LINES` -> `MAX_DIFF_LINES`     | no       | `500`               |
+| `review-enabled`       | `INPUT_REVIEW_ENABLED` -> `REVIEW_ENABLED`     | no       | `true`              |
+| `dry-run`              | `INPUT_DRY_RUN` (read directly)                | no       | `false`             |
 
-# Platform Selection (github or gitlab)
-PLATFORM=github
+First-party env vars supplied by the runner: `GITHUB_EVENT_PATH`, `GITHUB_REPOSITORY`, `GITHUB_EVENT_NAME`, `GITHUB_SHA`.
 
-# GitHub Configuration
-GITHUB_TOKEN=your_github_personal_access_token
-GITHUB_WEBHOOK_SECRET=your_webhook_secret_here
-
-# GitLab Configuration (alternative)
-GITLAB_TOKEN=your_gitlab_access_token
-GITLAB_URL=https://gitlab.com
-GITLAB_WEBHOOK_SECRET=your_webhook_secret_here
-
-# Agent Behavior
-AGENT_NAME=AH-Reviewer-Bot
-MAX_FILES_TO_REVIEW=10
-MAX_DIFF_LINES=500
-```
+Local smoke-test escape hatch: when `GITHUB_EVENT_PATH` is unset and both `CLI_REPO` and `CLI_PR` are set, `src.action` uses them as the review target. See `src/.env.example`.
 
 ## Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    GitHub Actions Runner                    │
-├─────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐      │
-│  │   GitHub     │  │   GitLab     │  │   Webhook    │      │
-│  │   Action     │  │   Action     │  │   Server     │      │
-│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘      │
-└─────────┼────────────────┼─────────────────┼──────────────┘
-          │                │                 │
-          └────────────────┴─────────────────┘
-                           │
-                    ┌──────▼──────┐
-                    │  PR Reviewer │
-                    │    Agent     │
-                    └──────┬───────┘
-                           │
-           ┌───────────────┼───────────────┐
-           │               │               │
-      ┌────▼────┐    ┌────▼────┐    ┌────▼────┐
-      │ OpenAI  │    │ GitHub  │    │ GitLab  │
-      │  LLM    │    │   API   │    │   API   │
-      └─────────┘    └─────────┘    └─────────┘
+                    GitHub pull_request event
+                               │
+                               ▼
+           ┌────────────────────────────────────────┐
+           │  Workflow: .github/workflows/*.yml     │
+           │  uses: alanhurtarte/pr-reviewer-agent  │
+           └──────────────────┬─────────────────────┘
+                              │ (docker run per event)
+                              ▼
+                ┌────────────────────────────┐
+                │  Container: python -m      │
+                │  src.action                │
+                └──────────────┬─────────────┘
+                               │
+                               ▼
+                       ┌───────────────┐
+                       │PRReviewerAgent│   (LangChain tool-using agent)
+                       └──────┬────────┘
+                              │
+                 ┌────────────┼────────────┐
+                 ▼            ▼            ▼
+            ┌─────────┐  ┌─────────┐  ┌──────────┐
+            │OpenAI / │  │ GitHub  │  │Redactor  │
+            │  Kimi   │  │   API   │  │(in-proc) │
+            └─────────┘  └─────────┘  └──────────┘
 ```
 
 ## Future Tech Considerations
 
-- **Vector Database**: For RAG implementation (Phase 3+)
-- **Redis**: For caching repository metadata and review state
-- **PostgreSQL**: For persistent storage of review history and metrics
-- **Prometheus/Grafana**: For observability and metrics
+- **Vector Database**: For RAG implementation (Phase 3+). Lives OUTSIDE the Action container — the Action queries it over HTTP.
+- **GHCR image caching**: Pre-built images per tag so the Action cold-start drops from ~30s (pip install) to ~3s (docker pull). Phase 4.
+- **tiktoken budget**: Pre-flight token estimation before calling the LLM.
+- **Prometheus / Grafana**: For observability and metrics on a self-hosted dashboard consuming Action run logs.

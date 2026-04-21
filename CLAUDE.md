@@ -4,95 +4,110 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-AI-powered PR/MR reviewer. Receives webhooks (or manual API calls) from GitHub or GitLab, fetches the diff, asks an OpenAI model (via LangChain tool-using agent) to review it, and posts the review back. Python 3.13, FastAPI, LangChain 0.3.
+AI-powered PR reviewer shipped as a Docker-container GitHub Action. Consumers add `uses: alanhurtarte/pr-reviewer-agent@v1` to a workflow file; on each PR event the Action container runs, fetches the diff, asks an OpenAI model (or Moonshot/Kimi, configurable) to review it via a LangChain tool-using agent, and posts the review back. Python 3.13, LangChain 0.3, no server to host.
 
 ## Repository layout notes
 
-- Git root and `venv/` are at the project root. Application code is under `src/`.
-- Top-level `README.md` and `requirements.txt` are empty stubs — the real deps are in `src/requirements.txt`. The env template is `src/.env.example`, but `.env` is loaded from the project root (python-dotenv uses the CWD where the process starts).
-- `.cursor/rules/codacy.mdc` is gitignored and exists only as a local Cursor hint; it is not project policy.
+- Git root is the repo root. `venv/` is there for local development only — the Action itself runs inside the Dockerfile-built image.
+- `action.yml`, `Dockerfile`, and `src/action.py` are the three load-bearing files for the Action delivery model. Keep them in sync (inputs declared in `action.yml` -> env-var mapping in `src/action.py`).
+- Top-level `README.md` has a minimal quickstart. Real project dependencies live in `src/requirements.txt`. `requirements.txt` at the repo root is an empty stub.
+- The env template is `src/.env.example`. `.env` is loaded from CWD (python-dotenv behavior); the Action container never reads one, it receives env vars from the runner.
+- `.cursor/rules/codacy.mdc` is gitignored — a local Cursor hint, not project policy.
 
 ## Commands
 
 All commands run from the project root.
 
 ```bash
-# Activate venv
+# --- Local development ---
 source venv/bin/activate
-
-# Install / update dependencies
 pip install -r src/requirements.txt
 
-# Run the FastAPI webhook server (dev, with reload)
-python -m src.main
-# or equivalently
-uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+# Run the test suite
+pytest -q
+
+# Smoke-test the Action entry point against a real PR (needs a real GITHUB_TOKEN
+# + LLM key). The CLI_REPO / CLI_PR fallback kicks in when GITHUB_EVENT_PATH is
+# unset, so this works outside GitHub's runner env.
+CLI_REPO=owner/repo CLI_PR=123 \
+INPUT_GITHUB_TOKEN=$GITHUB_TOKEN \
+INPUT_OPENAI_API_KEY=$OPENAI_API_KEY \
+python -m src.action
+
+# --- Action image build ---
+docker build -t prb:test .
+docker run --rm \
+  -e CLI_REPO=owner/repo -e CLI_PR=123 \
+  -e INPUT_GITHUB_TOKEN=$GITHUB_TOKEN \
+  -e INPUT_OPENAI_API_KEY=$OPENAI_API_KEY \
+  prb:test
 ```
 
-The module uses **relative imports** (`from .agents...`), so always invoke it as a package (`python -m src.main`) — never `python src/main.py`, which will break imports.
+Always invoke the entry point as a package (`python -m src.action`) — `src/action.py` uses relative imports (`from .agents...`) and `python src/action.py` will break.
 
-There are no tests, linters, or CI configured yet.
-
-### Useful HTTP endpoints (once the server is running)
-
-- `POST /webhook/github` — GitHub PR webhook (verifies `X-Hub-Signature-256` with `GITHUB_WEBHOOK_SECRET`)
-- `POST /webhook/gitlab` — GitLab MR webhook (compares `X-Gitlab-Token` against `GITLAB_WEBHOOK_SECRET`)
-- `POST /review/{owner}/{repo}/{pr_number}` — manually queue a review
-- `GET  /analyze/{owner}/{repo}/{pr_number}` — quick LLM summary, no comment posted
-- `GET  /health`
+There is no linter or CI configured yet.
 
 ## Architecture
 
 ```
-webhook / manual endpoint  ──▶  BackgroundTasks.process_review
-                                         │
-                                         ▼
-                                 PRReviewerAgent.review_pr
-                                         │
-                          ┌──────────────┴──────────────┐
-                          ▼                             ▼
-              platform_tools (GitHub|GitLab)      ChatOpenAI (LangChain agent)
-                          │                             │
-                  PyGithub / python-gitlab      tool-calling loop:
-                                                get_*_details → post_review/note
+GitHub pull_request event
+        │
+        ▼
+┌───────────────────────────────────────────────┐
+│  Workflow: .github/workflows/*.yml            │
+│  uses: alanhurtarte/pr-reviewer-agent         │
+└───────────────┬───────────────────────────────┘
+                │ docker run per event
+                ▼
+        ┌─────────────────┐
+        │ python -m       │
+        │ src.action      │   maps INPUT_* → Settings env vars,
+        └───────┬─────────┘   parses GITHUB_EVENT_PATH
+                ▼
+        ┌─────────────────┐
+        │ PRReviewerAgent │   LangChain tool-using agent
+        └───────┬─────────┘   (GitHub-only; GitLab dropped Wave 3)
+                │
+    ┌───────────┼───────────┐
+    ▼           ▼           ▼
+┌─────────┐ ┌─────────┐ ┌──────────┐
+│OpenAI / │ │ GitHub  │ │Redactor  │
+│  Kimi   │ │   API   │ │(in-proc) │
+└─────────┘ └─────────┘ └──────────┘
 ```
-
-### Platform abstraction
-
-`PLATFORM` env var (`"github"` or `"gitlab"`, default `"gitlab"` in `config.py`) selects the stack at startup in `PRReviewerAgent.__init__` (`src/agents/pr_reviewer.py`):
-
-- GitHub → `GitHubTools` + `GetPRDetailsTool` + `PostReviewTool` (`src/tools/github_tools.py`)
-- GitLab → `GitLabTools` + `GetMRDetailsTool` + `PostMRNoteTool` (`src/tools/gitlab_tools.py`)
-
-There is no shared interface class — the tool classes are duck-typed and the agent stores both `self.platform_tools` and a parallel `self.github_tools` alias. When extending, keep method names parallel (`get_pr_details` ↔ `get_mr_details`, `post_review_comment` ↔ `post_mr_note`) and branch in `main.py` / `pr_reviewer.py` on `self.platform`.
 
 ### Agent construction
 
-`_create_agent` builds a `ChatPromptTemplate` → `create_openai_tools_agent` → `AgentExecutor` with `max_iterations=5`, `temperature=0.1`, and a `ConversationBufferMemory`. The system prompt is templated on platform name ("GitHub Pull Request" vs "GitLab Merge Request"). Model comes from `settings.openai_model` (default `gpt-4-turbo-preview`).
+`_create_agent` in `src/agents/pr_reviewer.py` builds a `ChatPromptTemplate` -> `create_openai_tools_agent` -> `AgentExecutor` with `max_iterations=5`, `temperature=0.1`. The system prompt is intentionally repo-agnostic (no PR-specific strings) so OpenAI's automatic prompt-prefix cache stays hot. Per-PR content goes in the human turn. Model is resolved from `settings.llm_model` (default `gpt-4o-mini` for OpenAI, `kimi-k2-0905-preview` for Kimi).
+
+### Short-circuit order in `review_pr`
+
+1. Kill switch (`REVIEW_ENABLED=false`)
+2. Fetch PR details
+3. Draft / WIP -> skip
+4. Size limits (post polite "too large" notice, bail)
+5. Otherwise -> invoke the agent, log aggregated token usage at INFO
+
+The Action is ephemeral (one PR per run), so there is no durable dedup layer — GitHub's event semantics handle that upstream.
 
 ### Safety limits already in place
 
-- `GitHubTools.get_pr_details` truncates each file patch to 2000 chars.
-- `GetPRDetailsTool._run` only formats the first 10 files.
-- `config.py` exposes `MAX_FILES_TO_REVIEW` and `MAX_DIFF_LINES` but nothing reads them yet — wire them through if you add per-file limits.
-
-### Webhook signature verification
-
-`verify_webhook_signature` in `src/main.py` handles both platforms:
-- GitHub: HMAC-SHA256 of the raw body with `GITHUB_WEBHOOK_SECRET`, compared to `sha256=<hex>`.
-- GitLab: plain token compare against `X-Gitlab-Token` (GitLab doesn't sign the body).
-
-Never log the raw payload or secret.
+- `GitHubTools.get_pr_details` (`src/tools/github_tools.py`) truncates each file patch to 2000 chars, applies `partition_files` (lockfiles / vendored / generated / minified dropped), and applies `redact_with_count` on each remaining patch before returning.
+- `GetPRDetailsTool._run` only formats the first 10 files for the LLM.
+- `config.py` exposes `MAX_FILES_TO_REVIEW` (default 10) and `MAX_DIFF_LINES` (default 500); both are read in `PRReviewerAgent.review_pr` step (4).
+- `src/utils/redactor.py` scrubs GitHub / OpenAI / Slack / AWS / JWT / PEM / generic `password|secret|api_key=...` patterns. Counts are logged; matches never are.
+- `PostReviewTool._run` short-circuits when `INPUT_DRY_RUN=true` and returns a stub instead of posting.
+- `post_review` accepts an optional `comments` array of `{path, line, body}` for per-line inline feedback. `src/utils/diff_parser.py` translates each file line to the GitHub diff `position` the review-comments API expects; comments whose line falls outside the diff window are skipped (count logged, body never logged). If every line fails to map, the tool falls back to a summary-only review.
 
 ## Specs-driven workflow
 
 `specs/` is the source of truth for direction:
 
-- `specs/mission.md` — product vision, target users, success metrics
-- `specs/tech-stack.md` — locked dependency versions and architectural constraints (e.g., "no database in MVP", "async throughout", "LangChain for orchestration")
-- `specs/roadmap.md` — phased plan (Phase 0 foundation → Phase 6 team customization). The status table at the bottom is stale: code for GitHub/GitLab tools and the webhook server already exists even though those phases read "Not Started". Update the table when you finish work.
+- `specs/mission.md` — product vision, target users, success metrics. Wave 3 softened the "continuous learning" claim.
+- `specs/tech-stack.md` — locked dependency versions and architectural constraints. Constraint #1 ("GitHub Action First") and #5 ("No Database, Anywhere") both came out of the Wave 3 pivot; honor them before adding a dep or server-side state.
+- `specs/roadmap.md` — phased plan. Phase 1.7 (SQLite history KV + prompt caching) was **dropped** in Wave 3; do not re-open it without a concrete ask. Phase 4 is rescoped to "Distribution & Releases" (v1.0.0, Marketplace, GHCR image caching).
 
-Before adding a dependency or changing architecture, check `tech-stack.md` — it explicitly rules out some directions (e.g., TypeScript, early DB usage).
+Before adding a dependency or changing architecture, check `tech-stack.md` — it explicitly rules out some directions (TypeScript, early DB usage, GitLab).
 
 ## Skills
 

@@ -1,0 +1,21 @@
+{
+  "action": "opened",
+  "pull_request": {
+    "number": 42,
+    "title": "Add feature X",
+    "head": {
+      "sha": "abc123def4567890abc123def4567890abc123de",
+      "ref": "feature/x"
+    },
+    "base": {
+      "ref": "main"
+    }
+  },
+  "repository": {
+    "full_name": "octocat/hello-world",
+    "name": "hello-world",
+    "owner": {
+      "login": "octocat"
+    }
+  }
+}

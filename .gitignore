@@ -3,3 +3,9 @@
 #Ignore cursor AI rules
 .cursor/rules/codacy.mdc
 .env
+data/
+
+# Python
+__pycache__/
+*.pyc
+venv/

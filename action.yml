@@ -1,0 +1,45 @@
+name: 'AI PR Reviewer'
+description: 'AI-powered pull request reviewer using OpenAI or Moonshot/Kimi via LangChain'
+author: 'alanhurtarte'
+branding:
+  icon: 'git-pull-request'
+  color: 'purple'
+inputs:
+  github-token:
+    description: 'GitHub token (use ${{ secrets.GITHUB_TOKEN }})'
+    required: true
+  openai-api-key:
+    description: 'OpenAI API key (required when llm-provider=openai)'
+    required: false
+  moonshot-api-key:
+    description: 'Moonshot API key (required when llm-provider=kimi)'
+    required: false
+  llm-provider:
+    description: 'openai | kimi'
+    required: false
+    default: 'openai'
+  llm-model:
+    description: 'Model ID; defaults to gpt-4o-mini (openai) or kimi-k2-0905-preview (kimi)'
+    required: false
+  llm-base-url:
+    description: 'Override the LLM base URL (e.g. proxy or self-hosted)'
+    required: false
+  max-files-to-review:
+    description: 'Skip PRs with more changed files than this'
+    required: false
+    default: '10'
+  max-diff-lines:
+    description: 'Skip PRs with more total +/- lines than this'
+    required: false
+    default: '500'
+  review-enabled:
+    description: 'Set to "false" to acknowledge the event without calling the LLM (useful during incidents)'
+    required: false
+    default: 'true'
+  dry-run:
+    description: 'Run the review but do not post the comment back to the PR'
+    required: false
+    default: 'false'
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
