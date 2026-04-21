@@ -60,6 +60,24 @@ _INPUT_MAP: Tuple[Tuple[str, str], ...] = (
 _TRIGGER_ACTIONS = frozenset({"opened", "synchronize", "reopened"})
 
 
+def _normalize_input_env_keys() -> None:
+    """Mirror hyphenated `INPUT_*` vars onto their underscored form.
+
+    GitHub's Docker-action runtime serializes input names by only
+    uppercasing — hyphens stay as hyphens. So `github-token` arrives as
+    `INPUT_GITHUB-TOKEN`, not `INPUT_GITHUB_TOKEN`. Python can read
+    either via `os.environ[...]`, but our `_INPUT_MAP` keys and all
+    downstream `os.environ.get("INPUT_...")` calls assume underscores.
+    Copy each hyphenated INPUT_* to its underscored alias so both lookups
+    work transparently.
+    """
+    for key in list(os.environ.keys()):
+        if key.startswith("INPUT_") and "-" in key:
+            alias = key.replace("-", "_")
+            if alias not in os.environ:
+                os.environ[alias] = os.environ[key]
+
+
 def _map_inputs_to_settings_env() -> None:
     """Promote `INPUT_<NAME>` env vars onto the `Settings`-compatible names.
 
@@ -179,8 +197,10 @@ def main() -> int:
         format="%(levelname)s %(message)s",
     )
 
-    # Step 1 — promote INPUT_* onto Settings-compatible names before anything
-    # imports src.utils.config (which constructs Settings on import).
+    # Step 1 — normalize GitHub's hyphenated INPUT_* keys, then promote
+    # them onto Settings-compatible names before anything imports
+    # src.utils.config (which constructs Settings on import).
+    _normalize_input_env_keys()
     _map_inputs_to_settings_env()
 
     # Step 2 — friendly early-fail on missing secrets.

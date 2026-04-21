@@ -287,3 +287,32 @@ def test_skipped_review_still_returns_exit_zero(clean_action_env, tmp_path):
 
     from src.action import main
     assert main() == 0
+
+
+def test_hyphenated_input_env_vars_are_normalized(clean_action_env):
+    """GitHub Docker runtime passes inputs as INPUT_FOO-BAR; mirror to _."""
+    clean_action_env.setenv("INPUT_GITHUB-TOKEN", "gh-hyphen")
+    clean_action_env.setenv("INPUT_OPENAI-API-KEY", "sk-hyphen")
+    clean_action_env.setenv("INPUT_DRY-RUN", "true")
+
+    from src.action import _normalize_input_env_keys
+    _normalize_input_env_keys()
+
+    assert os.environ["INPUT_GITHUB_TOKEN"] == "gh-hyphen"
+    assert os.environ["INPUT_OPENAI_API_KEY"] == "sk-hyphen"
+    assert os.environ["INPUT_DRY_RUN"] == "true"
+    # Original hyphenated keys preserved (we only mirror, never delete).
+    assert os.environ["INPUT_GITHUB-TOKEN"] == "gh-hyphen"
+
+
+def test_hyphen_normalization_does_not_clobber_existing_underscored_values(
+    clean_action_env,
+):
+    """If both forms exist, the underscored value wins (user's explicit env)."""
+    clean_action_env.setenv("INPUT_GITHUB-TOKEN", "from-hyphen")
+    clean_action_env.setenv("INPUT_GITHUB_TOKEN", "from-underscore")
+
+    from src.action import _normalize_input_env_keys
+    _normalize_input_env_keys()
+
+    assert os.environ["INPUT_GITHUB_TOKEN"] == "from-underscore"
