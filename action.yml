@@ -6,7 +6,7 @@ branding:
   color: 'purple'
 inputs:
   github-token:
-    description: 'GitHub token (use ${{ secrets.GITHUB_TOKEN }})'
+    description: 'GitHub token — pass secrets.GITHUB_TOKEN from the calling workflow'
     required: true
   openai-api-key:
     description: 'OpenAI API key (required when llm-provider=openai)'
