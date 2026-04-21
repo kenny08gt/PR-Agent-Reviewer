@@ -13,6 +13,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY src /app/src
 
+# GitHub runs Docker actions with `--workdir /github/workspace` (the
+# consumer's repo checkout), overriding the image WORKDIR. Put /app on
+# PYTHONPATH so `python -m src.action` resolves regardless of cwd.
+ENV PYTHONPATH=/app
+
 # Action entry point. GitHub invokes the container with no extra args;
 # all inputs arrive via INPUT_* env vars and src/action.py reads them.
 ENTRYPOINT ["python", "-m", "src.action"]
