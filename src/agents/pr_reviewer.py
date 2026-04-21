@@ -94,7 +94,7 @@ class PRReviewerAgent:
         - `comment` (required): the overall summary body for the PR review. Use
           this for high-level themes, praise, and anything that spans multiple
           files.
-        - `comments` (optional): an array of `{path, line, body}` objects for
+        - `comments` (optional): an array of `{{path, line, body}}` objects for
           line-specific feedback. `line` is the 1-based line number in the NEW
           version of the file and MUST correspond to an added or modified line
           that appears in the diff. Do NOT choose lines that were only removed
